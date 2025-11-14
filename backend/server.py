@@ -11,23 +11,16 @@ import uuid
 from datetime import datetime, timedelta
 import math
 
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-
-# -------------------- Utility functions --------------------
 
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371000.0
@@ -63,9 +56,6 @@ def parse_iso(dt_str: str) -> datetime:
         return datetime.fromisoformat(dt_str.replace('Z', '+00:00')).replace(tzinfo=None)
     except Exception:
         raise HTTPException(status_code=400, detail=f'Invalid datetime: {dt_str}')
-
-
-# -------------------- Models --------------------
 
 LocationPrivacy = Literal['exact', 'masked_100m', 'masked_1km']
 
@@ -106,8 +96,6 @@ class EventOut(BaseModel):
     status: Literal['live', 'ended'] = 'live'
 
 
-# -------------------- Routes (existing) --------------------
-
 class StatusCheck(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_name: str
@@ -125,9 +113,8 @@ async def root():
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.model_dump())
+    status_obj = StatusCheck(**input.model_dump())
+    await db.status_checks.insert_one(status_obj.model_dump())
     return status_obj
 
 
@@ -137,8 +124,7 @@ async def get_status_checks():
     return [StatusCheck(**status_check) for status_check in status_checks]
 
 
-# -------------------- Users & Follows --------------------
-
+# Users & follows
 class UserCreate(BaseModel):
     id: str
     username: str
@@ -203,6 +189,12 @@ async def toggle_follow(f: FollowToggle):
         return { 'ok': True, 'following': False }
 
 
+@api_router.get('/follows/status')
+async def follow_status(follower_id: str, following_id: str):
+    doc = await db.follows.find_one({ 'follower_id': follower_id, 'following_id': following_id })
+    return { 'following': bool(doc) }
+
+
 @api_router.get('/users/{user_id}/streams')
 async def get_user_streams(user_id: str, limit: int = 50):
     docs = await db.streams.find({ 'user_id': user_id }).sort('started_at', -1).limit(limit).to_list(limit)
@@ -217,8 +209,44 @@ async def get_user_streams(user_id: str, limit: int = 50):
     return { 'streams': items }
 
 
-# -------------------- Streams & Events --------------------
+# Presence (scaffold)
+class PresenceReport(BaseModel):
+    user_id: str
+    event_id: str
 
+
+@api_router.post('/presence/watch')
+async def presence_watch(p: PresenceReport):
+    now = datetime.utcnow()
+    await db.presence.update_one(
+        { 'user_id': p.user_id, 'event_id': p.event_id },
+        { '$set': { 'user_id': p.user_id, 'event_id': p.event_id, 'updated_at': now } },
+        upsert=True
+    )
+    return { 'ok': True }
+
+
+@api_router.post('/presence/leave')
+async def presence_leave(p: PresenceReport):
+    await db.presence.delete_one({ 'user_id': p.user_id, 'event_id': p.event_id })
+    return { 'ok': True }
+
+
+@api_router.get('/events/{event_id}/presence')
+async def event_presence(event_id: str, user_id: Optional[str] = None):
+    cutoff = datetime.utcnow() - timedelta(minutes=3)
+    await db.presence.delete_many({ 'updated_at': { '$lt': cutoff } })
+    watchers = await db.presence.find({ 'event_id': event_id, 'updated_at': { '$gte': cutoff } }).to_list(1000)
+    total = len(watchers)
+    friends = []
+    if user_id:
+        friend_ids = await db.follows.find({ 'follower_id': user_id }).to_list(10000)
+        following_set = set([f['following_id'] for f in friend_ids])
+        friends = [w['user_id'] for w in watchers if w['user_id'] in following_set and w['user_id'] != user_id]
+    return { 'watching_now': total, 'friends_watching': len(friends), 'friend_ids': friends }
+
+
+# Streams & events core
 async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=10)
@@ -277,22 +305,17 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
 async def create_stream(payload: StreamCreate):
     now = datetime.utcnow()
     stream_id = str(uuid.uuid4())
-
     lat, lng = float(payload.lat), float(payload.lng)
-
     stream_doc = {
         'id': stream_id, 'user_id': payload.user_id, 'lat': lat, 'lng': lng, 'started_at': now, 'ended_at': None,
         'viewer_count_peak': 0, 'event_id': None, 'status': 'live', 'privacy_mode': payload.privacy_mode,
         'device_camera': payload.device_camera, 'playback_url': payload.playback_url,
     }
-
     await db.streams.insert_one(stream_doc)
-
     event_id = await assign_event_for_stream(stream_doc)
     if event_id:
         stream_doc['event_id'] = event_id
         await db.streams.update_one({'id': stream_id}, { '$set': { 'event_id': event_id }})
-
     out_lat, out_lng = mask_location(lat, lng, payload.privacy_mode)
     out = StreamOut(
         id=stream_id, user_id=payload.user_id, lat=out_lat, lng=out_lng, started_at=now, ended_at=None,
@@ -316,7 +339,6 @@ async def get_live_streams(
             query.update({'lat': { '$gte': sw_lat, '$lte': ne_lat }, 'lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
-
     docs = await db.streams.find(query).to_list(1000)
     items = []
     for d in docs:
@@ -359,16 +381,13 @@ async def get_live_events(
             query.update({'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat }, 'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
-
     docs = await db.events.find(query).to_list(500)
-    out = []
-    for e in docs:
-        out.append(EventOut(
-            id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
-            radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
-            viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
-            hashtags=e.get('hashtags', []), status=e.get('status', 'live')
-        ))
+    out = [EventOut(
+        id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
+        radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
+        viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
+        hashtags=e.get('hashtags', []), status=e.get('status', 'live')
+    ) for e in docs]
     return out
 
 
@@ -380,15 +399,10 @@ async def get_events_range(
     sw: Optional[str] = Query(None, description="SW corner as 'lat,lng'"),
 ):
     now = datetime.utcnow()
-    if not from_ts and not to_ts:
-        start = now - timedelta(hours=1)
-        end = now
-    else:
-        start = parse_iso(from_ts) if from_ts else now - timedelta(hours=1)
-        end = parse_iso(to_ts) if to_ts else now
+    start = parse_iso(from_ts) if from_ts else now - timedelta(hours=1)
+    end = parse_iso(to_ts) if to_ts else now
     if start > end:
         raise HTTPException(status_code=400, detail='from must be <= to')
-
     query = { 'created_at': { '$gte': start, '$lte': end } }
     if ne and sw:
         try:
@@ -397,16 +411,13 @@ async def get_events_range(
             query.update({'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat }, 'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
-
     docs = await db.events.find(query).sort('created_at', -1).to_list(1000)
-    out = []
-    for e in docs:
-        out.append(EventOut(
-            id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
-            radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
-            viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
-            hashtags=e.get('hashtags', []), status=e.get('status', 'live')
-        ))
+    out = [EventOut(
+        id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
+        radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
+        viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
+        hashtags=e.get('hashtags', []), status=e.get('status', 'live')
+    ) for e in docs]
     return out
 
 
@@ -424,7 +435,6 @@ async def get_event_detail(event_id: str):
             'started_at': d['started_at'], 'ended_at': d.get('ended_at'), 'status': d.get('status', 'live'),
             'privacy_mode': d.get('privacy_mode', 'exact'), 'playback_url': d.get('playback_url'),
         })
-
     return {
         'event': {
             'id': e['id'], 'centroid_lat': e['centroid_lat'], 'centroid_lng': e['centroid_lng'],
@@ -436,9 +446,7 @@ async def get_event_detail(event_id: str):
     }
 
 
-# Include the router in the main app
 app.include_router(api_router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -447,10 +455,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
