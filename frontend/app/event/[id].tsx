@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Video } from "expo-video";
-import { apiGet, presenceWatch, presenceLeave, getEventPresence, followUser } from "../../src/utils/api";
+import { apiGet, presenceWatch, presenceLeave, getEventPresence, followUser, getFollowStatus } from "../../src/utils/api";
 import { useViewerStore } from "../../src/state/viewerStore";
 import { CURRENT_USER_ID } from "../../src/constants/user";
 
@@ -17,6 +17,7 @@ export default function EventDetail() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any | null>(null);
   const [presence, setPresence] = useState<{ watching_now: number; friends_watching: number } | null>(null);
+  const [followingPOV, setFollowingPOV] = useState<boolean>(false);
 
   const povs = useViewerStore((s) => s.povs);
   const activeIndex = useViewerStore((s) => s.activeIndex);
@@ -48,16 +49,38 @@ export default function EventDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Presence keepalive and polling
   useEffect(() => {
     if (!id) return;
-    let timer: any;
+    let keepalive: any;
+    let poll: any;
     const start = async () => {
       try { await presenceWatch(CURRENT_USER_ID, String(id)); } catch {}
-      timer = setInterval(async () => { try { await presenceWatch(CURRENT_USER_ID, String(id)); } catch {} }, 60000);
+      keepalive = setInterval(async () => { try { await presenceWatch(CURRENT_USER_ID, String(id)); } catch {} }, 60000);
+      poll = setInterval(async () => {
+        try {
+          const p = await getEventPresence(String(id), CURRENT_USER_ID);
+          setPresence({ watching_now: p.watching_now, friends_watching: p.friends_watching });
+        } catch {}
+      }, 15000);
     };
     start();
-    return () => { clearInterval(timer); presenceLeave(CURRENT_USER_ID, String(id)).catch(() => {}); };
+    return () => { clearInterval(keepalive); clearInterval(poll); presenceLeave(CURRENT_USER_ID, String(id)).catch(() => {}); };
   }, [id]);
+
+  // Follow status for active POV
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      if (!activeStream?.user_id) { setFollowingPOV(false); return; }
+      try {
+        const st = await getFollowStatus(CURRENT_USER_ID, activeStream.user_id);
+        if (!cancelled) setFollowingPOV(!!st.following);
+      } catch { if (!cancelled) setFollowingPOV(false); }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [activeStream?.user_id]);
 
   const renderThumb = ({ item, index }: { item: any; index: number }) => (
     <TouchableOpacity onPress={() => setActiveIndex(index)} style={[styles.thumb, index === activeIndex && styles.thumbActive]}>
@@ -67,14 +90,15 @@ export default function EventDetail() {
   );
 
   const followActive = useCallback(async () => {
-    if (!activeStream?.user_id) return;
+    if (!activeStream?.user_id || followingPOV) return;
     try {
       await followUser(CURRENT_USER_ID, activeStream.user_id);
+      setFollowingPOV(true);
       Alert.alert("Followed", `You are now following @${activeStream.user_id}`);
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Failed to follow");
     }
-  }, [activeStream]);
+  }, [activeStream, followingPOV]);
 
   const presenceText = presence ? (presence.friends_watching > 0 ? `${presence.friends_watching} friends watching` : `${presence.watching_now} watching now`) : undefined;
 
@@ -95,7 +119,9 @@ export default function EventDetail() {
               {presenceText ? <View style={styles.chip}><Text style={styles.chipText}>{presenceText}</Text></View> : null}
             </View>
             <View style={styles.row}>
-              <TouchableOpacity onPress={followActive} style={styles.followBtn}><Text style={styles.followText}>Follow POV</Text></TouchableOpacity>
+              <TouchableOpacity onPress={followActive} disabled={followingPOV} style={[styles.followBtn, followingPOV && { opacity: 0.6 }]}>
+                <Text style={styles.followText}>{followingPOV ? "Following" : "Follow POV"}</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={load}><Ionicons name="refresh" color={COLORS.meta} size={20} /></TouchableOpacity>
             </View>
           </View>
