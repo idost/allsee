@@ -87,6 +87,11 @@ export default function LiveScreen() {
     }
   }, [activeStream]);
 
+  const copyToClipboard = async (text: string, label: string) => {
+    await Clipboard.setStringAsync(text);
+    Alert.alert("Copied!", `${label} copied to clipboard`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <PermissionModal
@@ -96,63 +101,147 @@ export default function LiveScreen() {
         onAccept={reallyRequest}
         onCancel={() => setModal(false)}
       />
-      <View style={styles.header}>
-        <Ionicons name="radio-outline" color="#4D9FFF" size={22} />
-        <Text style={styles.headerText}>Go Live</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Location Privacy</Text>
-        <View style={styles.row}>
-          {PRIVACY_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.key}
-              onPress={() => setPrivacy(opt.key)}
-              style={[styles.chip, privacy === opt.key && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, privacy === opt.key && styles.chipTextActive]}>{opt.label}</Text>
-            </TouchableOpacity>
-          ))}
+      
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 140 }}>
+        <View style={styles.header}>
+          <Ionicons name="radio-outline" color="#4D9FFF" size={28} />
+          <Text style={styles.headerText}>Go Live</Text>
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Camera</Text>
-        <View style={styles.row}>
-          <TouchableOpacity onPress={() => setCamera("back")} style={[styles.chip, camera === "back" && styles.chipActive]}>
-            <Text style={[styles.chipText, camera === "back" && styles.chipTextActive]}>Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setCamera("front")} style={[styles.chip, camera === "front" && styles.chipActive]}>
-            <Text style={[styles.chipText, camera === "front" && styles.chipTextActive]}>Front</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        {!activeStream ? (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Location Privacy</Text>
+              <View style={styles.row}>
+                {PRIVACY_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    onPress={() => setPrivacy(opt.key)}
+                    style={[styles.chip, privacy === opt.key && styles.chipActive]}
+                  >
+                    <Text style={[styles.chipText, privacy === opt.key && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
-      {activeStream && activeStream.rtmp_ingest_url && (
-        <View style={styles.credentialsSection}>
-          <View style={styles.credHeader}>
-            <Ionicons name="key-outline" color="#4D9FFF" size={20} />
-            <Text style={styles.credTitle}>Broadcasting Credentials</Text>
-          </View>
-          <View style={styles.credCard}>
-            <Text style={styles.credLabel}>RTMP Server URL</Text>
-            <Text style={styles.credValue} selectable>{activeStream.rtmp_ingest_url}</Text>
-          </View>
-          <View style={styles.credCard}>
-            <Text style={styles.credLabel}>Stream Key</Text>
-            <Text style={styles.credValue} selectable>{activeStream.rtmp_stream_key}</Text>
-          </View>
-          <View style={styles.instructionsBox}>
-            <Text style={styles.instructionsTitle}>📱 How to Broadcast:</Text>
-            <Text style={styles.instructionsText}>
-              1. Install Larix Broadcaster (iOS/Android){"\n"}
-              2. Add new connection with Server URL and Stream Key above{"\n"}
-              3. Start broadcasting to go live on the map!
-            </Text>
-          </View>
-        </View>
-      )}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Camera</Text>
+              <View style={styles.row}>
+                <TouchableOpacity onPress={() => setCamera("back")} style={[styles.chip, camera === "back" && styles.chipActive]}>
+                  <Text style={[styles.chipText, camera === "back" && styles.chipTextActive]}>Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setCamera("front")} style={[styles.chip, camera === "front" && styles.chipActive]}>
+                  <Text style={[styles.chipText, camera === "front" && styles.chipTextActive]}>Front</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        ) : (
+          <View style={styles.streamActiveSection}>
+            {/* Status Indicator */}
+            <View style={styles.statusBanner}>
+              <View style={styles.statusIndicator}>
+                <View style={styles.pulsingDot} />
+                <Text style={styles.statusText}>Stream Ready - Waiting for broadcast</Text>
+              </View>
+            </View>
 
+            {/* Step-by-step Guide */}
+            <View style={styles.guideSection}>
+              <Text style={styles.guideTitle}>🎥 Start Broadcasting</Text>
+              
+              {/* Step 1 */}
+              <View style={styles.stepCard}>
+                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.stepTitle}>Install Larix Broadcaster</Text>
+                  <Text style={styles.stepDesc}>Free app for iOS & Android</Text>
+                  <TouchableOpacity style={styles.linkButton}>
+                    <Text style={styles.linkText}>📲 Get Larix Broadcaster</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Step 2 */}
+              <View style={styles.stepCard}>
+                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.stepTitle}>Copy your credentials</Text>
+                  <Text style={styles.stepDesc}>You'll need these in Larix</Text>
+                  
+                  <View style={styles.credCard}>
+                    <View style={styles.credRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.credLabel}>RTMP Server</Text>
+                        <Text style={styles.credValue} numberOfLines={1}>{activeStream.rtmp_ingest_url}</Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.copyBtn}
+                        onPress={() => copyToClipboard(activeStream.rtmp_ingest_url!, "Server URL")}
+                      >
+                        <Ionicons name="copy-outline" size={18} color="#4D9FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.credCard}>
+                    <View style={styles.credRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.credLabel}>Stream Key</Text>
+                        <Text style={styles.credValue} numberOfLines={1}>{activeStream.rtmp_stream_key}</Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.copyBtn}
+                        onPress={() => copyToClipboard(activeStream.rtmp_stream_key!, "Stream Key")}
+                      >
+                        <Ionicons name="copy-outline" size={18} color="#4D9FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Step 3 */}
+              <View style={styles.stepCard}>
+                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.stepTitle}>Configure Larix</Text>
+                  <Text style={styles.stepDesc}>
+                    • Open Larix{"\n"}
+                    • Tap Settings → Connections{"\n"}
+                    • Add new connection{"\n"}
+                    • Paste Server URL & Stream Key{"\n"}
+                    • Save connection
+                  </Text>
+                </View>
+              </View>
+
+              {/* Step 4 */}
+              <View style={styles.stepCard}>
+                <View style={styles.stepNumber}><Text style={styles.stepNumberText}>4</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.stepTitle}>Go Live!</Text>
+                  <Text style={styles.stepDesc}>
+                    • Select your connection{"\n"}
+                    • Tap the broadcast button{"\n"}
+                    • Your stream will appear on the map{"\n"}
+                    • Others can watch in real-time!
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Map CTA */}
+            <View style={styles.ctaBox}>
+              <Ionicons name="map" size={24} color="#4D9FFF" />
+              <Text style={styles.ctaText}>Once broadcasting, your pin will appear on the Map tab</Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Fixed bottom buttons */}
       <View style={styles.footer}>
         <TouchableOpacity
           onPress={handleGoLive}
@@ -162,17 +251,19 @@ export default function LiveScreen() {
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.btnText}>Start Live</Text>
+            <Text style={styles.btnText}>{activeStream ? "Stream Active" : "Create Stream"}</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={handleEnd}
-          disabled={loading || !canEnd}
-          style={[styles.secondaryBtn, (loading || !canEnd) && styles.btnDisabledBorder]}
-        >
-          <Text style={styles.secondaryText}>End Stream</Text>
-        </TouchableOpacity>
+        {activeStream && (
+          <TouchableOpacity
+            onPress={handleEnd}
+            disabled={loading}
+            style={[styles.dangerBtn, loading && styles.btnDisabled]}
+          >
+            <Text style={styles.btnText}>End Stream</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
