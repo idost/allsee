@@ -30,12 +30,16 @@ export default function NativeMap({
   onRegionChangeComplete,
   initialRegion = { latitude: 41.0082, longitude: 28.9784, latitudeDelta: 0.05, longitudeDelta: 0.05 },
   loading,
+  onPressEvent,
+  onPressStream,
 }: {
   events: MapEvent[];
   streams: MapStream[];
   onRegionChangeComplete: (r: Region) => void;
   initialRegion?: Region;
   loading?: boolean;
+  onPressEvent?: (eventId: string) => void;
+  onPressStream?: (streamId: string) => void;
 }) {
   const [region, setRegion] = useState<Region>(initialRegion);
   const [locLoading, setLocLoading] = useState(false);
@@ -79,14 +83,14 @@ export default function NativeMap({
         showsUserLocation
       >
         {streams.map((s) => (
-          <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`@${s.user_id}`} description="Live stream">
+          <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`@${s.user_id}`} description="Live stream" onPress={() => onPressStream && onPressStream(s.id)}>
             <View style={[styles.pin, { backgroundColor: COLORS.blue }]} />
           </Marker>
         ))}
         {events.map((e) => {
           const color = e.stream_count >= 5 ? COLORS.amber : COLORS.violet;
           return (
-            <Marker key={e.id} coordinate={{ latitude: e.centroid_lat, longitude: e.centroid_lng }} title="Event" description={`${e.stream_count} POVs`}>
+            <Marker key={e.id} coordinate={{ latitude: e.centroid_lat, longitude: e.centroid_lng }} title="Event" description={`${e.stream_count} POVs`} onPress={() => onPressEvent && onPressEvent(e.id)}>
               <View style={[styles.cluster, { borderColor: color }]}> 
                 <View style={[styles.clusterInner, { backgroundColor: color }]}> 
                   <Text style={styles.clusterText}>{e.stream_count}</Text>

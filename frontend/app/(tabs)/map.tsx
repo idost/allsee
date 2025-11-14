@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "rea
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import NativeMap from "../../src/components/NativeMap";
+import { useRouter } from "expo-router";
 
 const COLORS = {
   bg: "#0A0A0A",
@@ -28,6 +29,7 @@ function regionToBbox(region: { latitude: number; longitude: number; latitudeDel
 const DEFAULT_REGION = { latitude: 41.0082, longitude: 28.9784, latitudeDelta: 0.05, longitudeDelta: 0.05 };
 
 export default function MapRoute() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [streams, setStreams] = useState<any[]>([]);
@@ -75,6 +77,14 @@ export default function MapRoute() {
     fetchData(r).catch(() => {});
   }, [fetchData]);
 
+  const onPressEvent = useCallback((id: string) => {
+    router.push(`/event/${id}`);
+  }, [router]);
+
+  const onPressStream = useCallback((id: string) => {
+    // In future, open streamer profile or single-stream viewer. For now, no-op.
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -98,6 +108,8 @@ export default function MapRoute() {
         onRegionChangeComplete={onRegionChangeComplete}
         initialRegion={DEFAULT_REGION as any}
         loading={loading}
+        onPressEvent={onPressEvent}
+        onPressStream={onPressStream}
       />
     </SafeAreaView>
   );
