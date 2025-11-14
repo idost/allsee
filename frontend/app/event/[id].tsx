@@ -129,10 +129,18 @@ export default function EventDetail() {
           <View style={styles.playerWrap}>
             {activeStream?.playback_url ? (
               <Video style={styles.player} source={{ uri: activeStream.playback_url }} useNativeControls resizeMode="cover" />
+            ) : activeStream?.livepeer_playback_id ? (
+              <Video 
+                style={styles.player} 
+                source={{ uri: `https://livepeercdn.studio/hls/${activeStream.livepeer_playback_id}/index.m3u8` }} 
+                useNativeControls 
+                resizeMode="cover" 
+              />
             ) : (
               <View style={[styles.player, styles.playerPlaceholder]}>
-                <Ionicons name="image" color={COLORS.meta} size={48} />
+                <Ionicons name="videocam-off" color={COLORS.meta} size={48} />
                 <Text style={styles.meta}>No playback available</Text>
+                <Text style={styles.metaSmall}>Broadcast using RTMP from Go Live tab</Text>
               </View>
             )}
             <View style={styles.overlay}>
