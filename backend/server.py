@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.concurrency import run_in_threadpool
 import os
 import logging
 from pathlib import Path
@@ -10,6 +11,9 @@ from typing import List, Optional, Literal, Tuple
 import uuid
 from datetime import datetime, timedelta
 import math
+import json
+import urllib.request
+import urllib.parse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -325,6 +329,14 @@ async def create_stream(payload: StreamCreate):
     return out
 
 
+@api_router.post('/streams/{stream_id}/attach_playback')
+async def attach_playback(stream_id: str, playback_url: str):
+    res = await db.streams.update_one({ 'id': stream_id }, { '$set': { 'playback_url': playback_url }})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail='Stream not found')
+    return { 'ok': True }
+
+
 @api_router.get('/streams/live')
 async def get_live_streams(
     ne: Optional[str] = Query(None, description="NE corner as 'lat,lng'"),
@@ -444,6 +456,33 @@ async def get_event_detail(event_id: str):
         },
         'streams': stream_items
     }
+
+
+# Reverse geocoding with simple cache (no external deps)
+@api_router.get('/geocode/reverse')
+async def reverse_geocode(lat: float, lng: float):
+    # Round to 4 decimals to cache ~11m
+    key = f"{round(lat, 4)}_{round(lng, 4)}"
+    cached = await db.geocache.find_one({ 'key': key })
+    if cached and 'display_name' in cached:
+        return { 'label': cached['display_name'] }
+
+    async def fetch():
+        base = "https://nominatim.openstreetmap.org/reverse"
+        params = urllib.parse.urlencode({ 'format': 'json', 'lat': lat, 'lon': lng, 'zoom': 16, 'addressdetails': 0 })
+        url = f"{base}?{params}"
+        req = urllib.request.Request(url, headers={ 'User-Agent': 'Allsee/1.0 (MVP)' })
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    try:
+        data = await run_in_threadpool(fetch)
+        label = data.get('display_name') or None
+        if label:
+            await db.geocache.update_one({ 'key': key }, { '$set': { 'key': key, 'display_name': label, 'updated_at': datetime.utcnow() } }, upsert=True)
+        return { 'label': label }
+    except Exception:
+        return { 'label': None }
 
 
 app.include_router(api_router)
