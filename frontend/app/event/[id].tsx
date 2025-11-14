@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Video } from "expo-av";
-import { apiGet } from "../../src/utils/api";
+import { Video } from "expo-video";
+import { apiGet, presenceWatch, presenceLeave } from "../../src/utils/api";
 import { useViewerStore } from "../../src/state/viewerStore";
+import { CURRENT_USER_ID } from "../../src/constants/user";
 
 const COLORS = {
   bg: "#0A0A0A",
@@ -43,7 +44,7 @@ export default function EventDetail() {
       setLoading(true);
       const d = await apiGet<any>(`/api/events/${id}`);
       setData(d);
-      setEvent(id, (d.streams || []).map((s: any) => ({ id: s.id, user_id: s.user_id, playback_url: s.playback_url })));
+      setEvent(id!, (d.streams || []).map((s: any) => ({ id: s.id, user_id: s.user_id, playback_url: s.playback_url })));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -52,6 +53,17 @@ export default function EventDetail() {
   }, [id, setEvent]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!id) return;
+    let timer: any;
+    const start = async () => {
+      try { await presenceWatch(CURRENT_USER_ID, String(id)); } catch {}
+      timer = setInterval(async () => { try { await presenceWatch(CURRENT_USER_ID, String(id)); } catch {} }, 60000);
+    };
+    start();
+    return () => { clearInterval(timer); presenceLeave(CURRENT_USER_ID, String(id)).catch(() => {}); };
+  }, [id]);
 
   const renderThumb = ({ item, index }: { item: any; index: number }) => (
     <TouchableOpacity
