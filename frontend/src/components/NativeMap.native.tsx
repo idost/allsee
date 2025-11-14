@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
-import MapView, { Marker, Region } from "react-native-maps";
 import * as Location from "expo-location";
+import Constants from "expo-constants";
+import GlowPin from "./GlowPin";
 
 const COLORS = {
   blue: "#4D9FFF",
@@ -22,6 +23,14 @@ export type MapStream = {
   user_id: string;
   lat: number;
   lng: number;
+};
+
+// Local Region type to avoid static import of react-native-maps types
+export type Region = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
 };
 
 export default function NativeMap({
@@ -69,6 +78,25 @@ export default function NativeMap({
     onRegionChangeComplete(r);
   }, [onRegionChangeComplete]);
 
+  // In Expo Go (appOwnership === 'expo'), avoid requiring native-only module react-native-maps
+  const isExpoGo = Constants.appOwnership === "expo";
+  if (isExpoGo) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        {(loading || locLoading) && <ActivityIndicator color="#fff" />}
+        <Text style={{ color: "#A0A0A0", paddingHorizontal: 16, textAlign: "center" }}>
+          Map preview requires a Dev Build. Use the Web list or continue with Go Live.
+        </Text>
+      </View>
+    );
+  }
+
+  // Dynamically require react-native-maps only when not running in Expo Go
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const RNMaps = require("react-native-maps");
+  const MapView: any = RNMaps.default;
+  const Marker: any = RNMaps.Marker;
+
   return (
     <View style={{ flex: 1 }}>
       {(loading || locLoading) && (
@@ -84,7 +112,6 @@ export default function NativeMap({
       >
         {streams.map((s) => (
           <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`@${s.user_id}`} description="Live stream" onPress={() => onPressStream && onPressStream(s.id)}>
-            {/* Glow pin for single live stream */}
             <GlowPin color={COLORS.blue} size={16} />
           </Marker>
         ))}
@@ -107,7 +134,6 @@ export default function NativeMap({
 
 const styles = StyleSheet.create({
   loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, height: 48, alignItems: "center", justifyContent: "center", zIndex: 2 },
-  pin: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: "#ffffff" },
   cluster: { width: 36, height: 36, borderRadius: 18, borderWidth: 3, alignItems: "center", justifyContent: "center", backgroundColor: "#00000099" },
   clusterInner: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   clusterText: { color: "#fff", fontWeight: "700" },
