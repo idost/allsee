@@ -1,8 +1,8 @@
-export const API_BASE = process.env.EXPO_BACKEND_URL || "";
+const BASE = process.env.EXPO_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || "";
+export const API_BASE = BASE.endsWith("/") ? BASE.slice(0, -1) : BASE;
 
 function buildUrl(path: string) {
   if (!path.startsWith("/")) path = `/${path}`;
-  // Always hit the preview domain directly to work on native too
   return `${API_BASE}${path}`;
 }
 
