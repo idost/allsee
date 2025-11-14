@@ -74,9 +74,57 @@ export default function NativeMapWeb({
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#1A1A1A", borderRadius: 12, padding: 16, marginBottom: 12 },
-  title: { color: "#FFFFFF", fontSize: 16 },
-  meta: { color: "#A0A0A0" },
-  metaSmall: { color: "#A0A0A0", fontSize: 12, marginTop: 6 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  header: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: "#1A1A1A",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#4D9FFF22",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#162335",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  meta: {
+    color: "#A0A0A0",
+    fontSize: 14,
+  },
+  metaSmall: {
+    color: "#A0A0A0",
+    fontSize: 12,
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 100,
+  },
+  emptyTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
 });
