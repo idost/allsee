@@ -41,7 +41,6 @@ def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> 
 
 
 def bbox_from_center(lat: float, lng: float, radius_m: float) -> Tuple[float, float, float, float]:
-    # returns (min_lat, min_lng, max_lat, max_lng)
     lat_delta = (radius_m / 111320.0)
     lng_delta = radius_m / (111320.0 * max(0.00001, math.cos(math.radians(lat))))
     return lat - lat_delta, lng - lng_delta, lat + lat_delta, lng + lng_delta
@@ -51,7 +50,6 @@ def mask_location(lat: float, lng: float, mode: str) -> Tuple[float, float]:
     if mode == 'exact':
         return lat, lng
     radius = 100.0 if mode == 'masked_100m' else 1000.0
-    # random offset within circle radius using deterministic jitter from uuid for stability (but here random via uuid4)
     rnd = uuid.uuid4().int % 1000000
     angle = (rnd % 360) * math.pi / 180.0
     dist = (rnd % 1000) / 1000.0 * radius
@@ -78,6 +76,7 @@ class StreamCreate(BaseModel):
     lng: float
     privacy_mode: LocationPrivacy = 'exact'
     device_camera: Literal['front', 'back'] = 'back'
+    playback_url: Optional[str] = None
 
 
 class StreamOut(BaseModel):
@@ -91,6 +90,7 @@ class StreamOut(BaseModel):
     event_id: Optional[str] = None
     status: Literal['live', 'ended'] = 'live'
     privacy_mode: LocationPrivacy = 'exact'
+    playback_url: Optional[str] = None
 
 
 class EventOut(BaseModel):
@@ -140,7 +140,6 @@ async def get_status_checks():
 # -------------------- Streams & Events --------------------
 
 async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
-    """Find nearby streams (<=50m within last 10min). If found, join/create event and update documents."""
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=10)
     lat = stream_doc['lat']
@@ -155,7 +154,6 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
         'id': { '$ne': stream_doc['id'] }
     }).to_list(100)
 
-    # Filter precise by haversine
     nearby = []
     for s in candidates:
         d = haversine_distance_m(lat, lng, s['lat'], s['lng'])
@@ -165,7 +163,6 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
     if not nearby:
         return None
 
-    # Join existing event if any nearby has one
     event_id = None
     for s in nearby:
         if s.get('event_id'):
@@ -173,7 +170,6 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
             break
 
     if not event_id:
-        # Create new event
         event_id = str(uuid.uuid4())
         participants = [stream_doc] + nearby
         centroid_lat = sum(p['lat'] for p in participants) / len(participants)
@@ -191,13 +187,10 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
             'status': 'live'
         }
         await db.events.insert_one(event_doc)
-        # Update participants with event_id
         ids = [p['id'] for p in participants]
         await db.streams.update_many({'id': { '$in': ids }}, { '$set': { 'event_id': event_id }})
     else:
-        # Join existing event and update centroid & count
         await db.streams.update_one({'id': stream_doc['id']}, { '$set': { 'event_id': event_id }})
-        # Recompute centroid and stream_count
         event_streams = await db.streams.find({ 'event_id': event_id, 'status': 'live' }).to_list(100)
         if event_streams:
             centroid_lat = sum(p['lat'] for p in event_streams) / len(event_streams)
@@ -230,17 +223,16 @@ async def create_stream(payload: StreamCreate):
         'status': 'live',
         'privacy_mode': payload.privacy_mode,
         'device_camera': payload.device_camera,
+        'playback_url': payload.playback_url,
     }
 
     await db.streams.insert_one(stream_doc)
 
-    # Assign event if nearby streams
     event_id = await assign_event_for_stream(stream_doc)
     if event_id:
         stream_doc['event_id'] = event_id
         await db.streams.update_one({'id': stream_id}, { '$set': { 'event_id': event_id }})
 
-    # Prepare output with masking
     out_lat, out_lng = mask_location(lat, lng, payload.privacy_mode)
     out = StreamOut(
         id=stream_id,
@@ -252,7 +244,8 @@ async def create_stream(payload: StreamCreate):
         viewer_count_peak=0,
         event_id=event_id,
         status='live',
-        privacy_mode=payload.privacy_mode
+        privacy_mode=payload.privacy_mode,
+        playback_url=payload.playback_url,
     )
     return out
 
@@ -277,7 +270,6 @@ async def get_live_streams(
             raise HTTPException(status_code=400, detail='Invalid bbox params')
 
     docs = await db.streams.find(query).to_list(1000)
-    # Map to output + apply masking per privacy
     items = []
     for d in docs:
         out_lat, out_lng = mask_location(d['lat'], d['lng'], d.get('privacy_mode', 'exact'))
@@ -291,7 +283,8 @@ async def get_live_streams(
             'viewer_count_peak': d.get('viewer_count_peak', 0),
             'event_id': d.get('event_id'),
             'status': d.get('status', 'live'),
-            'privacy_mode': d.get('privacy_mode', 'exact')
+            'privacy_mode': d.get('privacy_mode', 'exact'),
+            'playback_url': d.get('playback_url'),
         })
 
     return { 'streams': items }
@@ -304,7 +297,6 @@ async def end_stream(stream_id: str):
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail='Stream not found or already ended')
 
-    # If belonged to an event, check if event should end
     doc = await db.streams.find_one({'id': stream_id})
     if doc and doc.get('event_id'):
         ev_id = doc['event_id']
@@ -358,7 +350,6 @@ async def get_events_range(
 ):
     now = datetime.utcnow()
     if not from_ts and not to_ts:
-        # Default: last 1 hour
         start = now - timedelta(hours=1)
         end = now
     else:
@@ -405,7 +396,6 @@ async def get_event_detail(event_id: str):
     if not e:
         raise HTTPException(status_code=404, detail='Event not found')
     streams = await db.streams.find({ 'event_id': event_id }).to_list(200)
-    # Mask stream locations when needed
     stream_items = []
     for d in streams:
         out_lat, out_lng = mask_location(d['lat'], d['lng'], d.get('privacy_mode', 'exact'))
@@ -417,7 +407,8 @@ async def get_event_detail(event_id: str):
             'started_at': d['started_at'],
             'ended_at': d.get('ended_at'),
             'status': d.get('status', 'live'),
-            'privacy_mode': d.get('privacy_mode', 'exact')
+            'privacy_mode': d.get('privacy_mode', 'exact'),
+            'playback_url': d.get('playback_url'),
         })
 
     return {
@@ -448,7 +439,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
