@@ -137,6 +137,86 @@ async def get_status_checks():
     return [StatusCheck(**status_check) for status_check in status_checks]
 
 
+# -------------------- Users & Follows --------------------
+
+class UserCreate(BaseModel):
+    id: str
+    username: str
+    avatar_b64: Optional[str] = None
+    bio: Optional[str] = None
+
+
+class UserProfileOut(BaseModel):
+    id: str
+    username: str
+    avatar_b64: Optional[str] = None
+    bio: Optional[str] = None
+    follower_count: int = 0
+    following_count: int = 0
+    stream_count: int = 0
+
+
+class FollowToggle(BaseModel):
+    follower_id: str
+    following_id: str
+    action: Literal['follow', 'unfollow'] = 'follow'
+
+
+@api_router.post('/users')
+async def create_user(u: UserCreate):
+    existing = await db.users.find_one({'id': u.id})
+    if existing:
+        await db.users.update_one({'id': u.id}, { '$set': u.model_dump() })
+        return { 'ok': True, 'updated': True }
+    await db.users.insert_one(u.model_dump())
+    return { 'ok': True, 'created': True }
+
+
+@api_router.get('/users/{user_id}/profile', response_model=UserProfileOut)
+async def get_user_profile(user_id: str):
+    u = await db.users.find_one({ 'id': user_id })
+    if not u:
+        u = { 'id': user_id, 'username': user_id, 'avatar_b64': None, 'bio': None }
+        await db.users.insert_one(u)
+    follower_count = await db.follows.count_documents({ 'following_id': user_id })
+    following_count = await db.follows.count_documents({ 'follower_id': user_id })
+    stream_count = await db.streams.count_documents({ 'user_id': user_id })
+    return UserProfileOut(
+        id=u['id'], username=u.get('username', user_id), avatar_b64=u.get('avatar_b64'), bio=u.get('bio'),
+        follower_count=follower_count, following_count=following_count, stream_count=stream_count
+    )
+
+
+@api_router.post('/follows')
+async def toggle_follow(f: FollowToggle):
+    if f.follower_id == f.following_id:
+        raise HTTPException(status_code=400, detail='Cannot follow yourself')
+    if f.action == 'follow':
+        await db.follows.update_one(
+            { 'follower_id': f.follower_id, 'following_id': f.following_id },
+            { '$set': { 'follower_id': f.follower_id, 'following_id': f.following_id, 'created_at': datetime.utcnow() } },
+            upsert=True
+        )
+        return { 'ok': True, 'following': True }
+    else:
+        await db.follows.delete_one({ 'follower_id': f.follower_id, 'following_id': f.following_id })
+        return { 'ok': True, 'following': False }
+
+
+@api_router.get('/users/{user_id}/streams')
+async def get_user_streams(user_id: str, limit: int = 50):
+    docs = await db.streams.find({ 'user_id': user_id }).sort('started_at', -1).limit(limit).to_list(limit)
+    items = []
+    for d in docs:
+        out_lat, out_lng = mask_location(d['lat'], d['lng'], d.get('privacy_mode', 'exact'))
+        items.append({
+            'id': d['id'], 'user_id': d['user_id'], 'lat': out_lat, 'lng': out_lng,
+            'started_at': d['started_at'], 'ended_at': d.get('ended_at'), 'status': d.get('status', 'live'),
+            'privacy_mode': d.get('privacy_mode', 'exact'), 'playback_url': d.get('playback_url')
+        })
+    return { 'streams': items }
+
+
 # -------------------- Streams & Events --------------------
 
 async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
@@ -147,10 +227,8 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
 
     min_lat, min_lng, max_lat, max_lng = bbox_from_center(lat, lng, 60.0)
     candidates = await db.streams.find({
-        'status': 'live',
-        'started_at': { '$gte': window_start },
-        'lat': { '$gte': min_lat, '$lte': max_lat },
-        'lng': { '$gte': min_lng, '$lte': max_lng },
+        'status': 'live', 'started_at': { '$gte': window_start },
+        'lat': { '$gte': min_lat, '$lte': max_lat }, 'lng': { '$gte': min_lng, '$lte': max_lng },
         'id': { '$ne': stream_doc['id'] }
     }).to_list(100)
 
@@ -175,16 +253,9 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
         centroid_lat = sum(p['lat'] for p in participants) / len(participants)
         centroid_lng = sum(p['lng'] for p in participants) / len(participants)
         event_doc = {
-            'id': event_id,
-            'centroid_lat': centroid_lat,
-            'centroid_lng': centroid_lng,
-            'radius_meters': 50,
-            'created_at': now,
-            'ended_at': None,
-            'viewer_count_total': 0,
-            'stream_count': len(participants),
-            'hashtags': [],
-            'status': 'live'
+            'id': event_id, 'centroid_lat': centroid_lat, 'centroid_lng': centroid_lng, 'radius_meters': 50,
+            'created_at': now, 'ended_at': None, 'viewer_count_total': 0, 'stream_count': len(participants),
+            'hashtags': [], 'status': 'live'
         }
         await db.events.insert_one(event_doc)
         ids = [p['id'] for p in participants]
@@ -196,9 +267,7 @@ async def assign_event_for_stream(stream_doc: dict) -> Optional[str]:
             centroid_lat = sum(p['lat'] for p in event_streams) / len(event_streams)
             centroid_lng = sum(p['lng'] for p in event_streams) / len(event_streams)
             await db.events.update_one({'id': event_id}, { '$set': {
-                'centroid_lat': centroid_lat,
-                'centroid_lng': centroid_lng,
-                'stream_count': len(event_streams),
+                'centroid_lat': centroid_lat, 'centroid_lng': centroid_lng, 'stream_count': len(event_streams),
             }})
 
     return event_id
@@ -212,18 +281,9 @@ async def create_stream(payload: StreamCreate):
     lat, lng = float(payload.lat), float(payload.lng)
 
     stream_doc = {
-        'id': stream_id,
-        'user_id': payload.user_id,
-        'lat': lat,
-        'lng': lng,
-        'started_at': now,
-        'ended_at': None,
-        'viewer_count_peak': 0,
-        'event_id': None,
-        'status': 'live',
-        'privacy_mode': payload.privacy_mode,
-        'device_camera': payload.device_camera,
-        'playback_url': payload.playback_url,
+        'id': stream_id, 'user_id': payload.user_id, 'lat': lat, 'lng': lng, 'started_at': now, 'ended_at': None,
+        'viewer_count_peak': 0, 'event_id': None, 'status': 'live', 'privacy_mode': payload.privacy_mode,
+        'device_camera': payload.device_camera, 'playback_url': payload.playback_url,
     }
 
     await db.streams.insert_one(stream_doc)
@@ -235,16 +295,8 @@ async def create_stream(payload: StreamCreate):
 
     out_lat, out_lng = mask_location(lat, lng, payload.privacy_mode)
     out = StreamOut(
-        id=stream_id,
-        user_id=payload.user_id,
-        lat=out_lat,
-        lng=out_lng,
-        started_at=now,
-        ended_at=None,
-        viewer_count_peak=0,
-        event_id=event_id,
-        status='live',
-        privacy_mode=payload.privacy_mode,
+        id=stream_id, user_id=payload.user_id, lat=out_lat, lng=out_lng, started_at=now, ended_at=None,
+        viewer_count_peak=0, event_id=event_id, status='live', privacy_mode=payload.privacy_mode,
         playback_url=payload.playback_url,
     )
     return out
@@ -257,15 +309,11 @@ async def get_live_streams(
 ):
     now = datetime.utcnow()
     query = { 'status': 'live', 'started_at': { '$lte': now } }
-
     if ne and sw:
         try:
             ne_lat, ne_lng = [float(x) for x in ne.split(',')]
             sw_lat, sw_lng = [float(x) for x in sw.split(',')]
-            query.update({
-                'lat': { '$gte': sw_lat, '$lte': ne_lat },
-                'lng': { '$gte': sw_lng, '$lte': ne_lng },
-            })
+            query.update({'lat': { '$gte': sw_lat, '$lte': ne_lat }, 'lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
 
@@ -274,19 +322,12 @@ async def get_live_streams(
     for d in docs:
         out_lat, out_lng = mask_location(d['lat'], d['lng'], d.get('privacy_mode', 'exact'))
         items.append({
-            'id': d['id'],
-            'user_id': d['user_id'],
-            'lat': out_lat,
-            'lng': out_lng,
-            'started_at': d['started_at'],
-            'ended_at': d.get('ended_at'),
-            'viewer_count_peak': d.get('viewer_count_peak', 0),
-            'event_id': d.get('event_id'),
-            'status': d.get('status', 'live'),
-            'privacy_mode': d.get('privacy_mode', 'exact'),
+            'id': d['id'], 'user_id': d['user_id'], 'lat': out_lat, 'lng': out_lng,
+            'started_at': d['started_at'], 'ended_at': d.get('ended_at'),
+            'viewer_count_peak': d.get('viewer_count_peak', 0), 'event_id': d.get('event_id'),
+            'status': d.get('status', 'live'), 'privacy_mode': d.get('privacy_mode', 'exact'),
             'playback_url': d.get('playback_url'),
         })
-
     return { 'streams': items }
 
 
@@ -296,7 +337,6 @@ async def end_stream(stream_id: str):
     res = await db.streams.update_one({'id': stream_id, 'status': 'live'}, { '$set': { 'status': 'ended', 'ended_at': now }})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail='Stream not found or already ended')
-
     doc = await db.streams.find_one({'id': stream_id})
     if doc and doc.get('event_id'):
         ev_id = doc['event_id']
@@ -316,10 +356,7 @@ async def get_live_events(
         try:
             ne_lat, ne_lng = [float(x) for x in ne.split(',')]
             sw_lat, sw_lng = [float(x) for x in sw.split(',')]
-            query.update({
-                'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat },
-                'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng },
-            })
+            query.update({'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat }, 'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
 
@@ -327,16 +364,10 @@ async def get_live_events(
     out = []
     for e in docs:
         out.append(EventOut(
-            id=e['id'],
-            centroid_lat=e['centroid_lat'],
-            centroid_lng=e['centroid_lng'],
-            radius_meters=e.get('radius_meters', 50),
-            created_at=e['created_at'],
-            ended_at=e.get('ended_at'),
-            viewer_count_total=e.get('viewer_count_total', 0),
-            stream_count=e.get('stream_count', 0),
-            hashtags=e.get('hashtags', []),
-            status=e.get('status', 'live')
+            id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
+            radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
+            viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
+            hashtags=e.get('hashtags', []), status=e.get('status', 'live')
         ))
     return out
 
@@ -355,20 +386,15 @@ async def get_events_range(
     else:
         start = parse_iso(from_ts) if from_ts else now - timedelta(hours=1)
         end = parse_iso(to_ts) if to_ts else now
-
     if start > end:
         raise HTTPException(status_code=400, detail='from must be <= to')
 
     query = { 'created_at': { '$gte': start, '$lte': end } }
-
     if ne and sw:
         try:
             ne_lat, ne_lng = [float(x) for x in ne.split(',')]
             sw_lat, sw_lng = [float(x) for x in sw.split(',')]
-            query.update({
-                'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat },
-                'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng },
-            })
+            query.update({'centroid_lat': { '$gte': sw_lat, '$lte': ne_lat }, 'centroid_lng': { '$gte': sw_lng, '$lte': ne_lng }})
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid bbox params')
 
@@ -376,16 +402,10 @@ async def get_events_range(
     out = []
     for e in docs:
         out.append(EventOut(
-            id=e['id'],
-            centroid_lat=e['centroid_lat'],
-            centroid_lng=e['centroid_lng'],
-            radius_meters=e.get('radius_meters', 50),
-            created_at=e['created_at'],
-            ended_at=e.get('ended_at'),
-            viewer_count_total=e.get('viewer_count_total', 0),
-            stream_count=e.get('stream_count', 0),
-            hashtags=e.get('hashtags', []),
-            status=e.get('status', 'live')
+            id=e['id'], centroid_lat=e['centroid_lat'], centroid_lng=e['centroid_lng'],
+            radius_meters=e.get('radius_meters', 50), created_at=e['created_at'], ended_at=e.get('ended_at'),
+            viewer_count_total=e.get('viewer_count_total', 0), stream_count=e.get('stream_count', 0),
+            hashtags=e.get('hashtags', []), status=e.get('status', 'live')
         ))
     return out
 
@@ -400,29 +420,17 @@ async def get_event_detail(event_id: str):
     for d in streams:
         out_lat, out_lng = mask_location(d['lat'], d['lng'], d.get('privacy_mode', 'exact'))
         stream_items.append({
-            'id': d['id'],
-            'user_id': d['user_id'],
-            'lat': out_lat,
-            'lng': out_lng,
-            'started_at': d['started_at'],
-            'ended_at': d.get('ended_at'),
-            'status': d.get('status', 'live'),
-            'privacy_mode': d.get('privacy_mode', 'exact'),
-            'playback_url': d.get('playback_url'),
+            'id': d['id'], 'user_id': d['user_id'], 'lat': out_lat, 'lng': out_lng,
+            'started_at': d['started_at'], 'ended_at': d.get('ended_at'), 'status': d.get('status', 'live'),
+            'privacy_mode': d.get('privacy_mode', 'exact'), 'playback_url': d.get('playback_url'),
         })
 
     return {
         'event': {
-            'id': e['id'],
-            'centroid_lat': e['centroid_lat'],
-            'centroid_lng': e['centroid_lng'],
-            'radius_meters': e.get('radius_meters', 50),
-            'created_at': e['created_at'],
-            'ended_at': e.get('ended_at'),
-            'viewer_count_total': e.get('viewer_count_total', 0),
-            'stream_count': e.get('stream_count', 0),
-            'hashtags': e.get('hashtags', []),
-            'status': e.get('status', 'live')
+            'id': e['id'], 'centroid_lat': e['centroid_lat'], 'centroid_lng': e['centroid_lng'],
+            'radius_meters': e.get('radius_meters', 50), 'created_at': e['created_at'], 'ended_at': e.get('ended_at'),
+            'viewer_count_total': e.get('viewer_count_total', 0), 'stream_count': e.get('stream_count', 0),
+            'hashtags': e.get('hashtags', []), 'status': e.get('status', 'live')
         },
         'streams': stream_items
     }
