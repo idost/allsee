@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import type { MapEvent, MapStream } from "./NativeMap.native";
 
 export default function NativeMapWeb({
@@ -14,21 +15,58 @@ export default function NativeMapWeb({
   onPressStream?: (id: string) => void;
 }) {
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
       <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <Text style={styles.header}>Live Events & Streams</Text>
+        
         {events.map((e) => (
-          <Pressable key={e.id} onPress={() => onPressEvent && onPressEvent(e.id)} style={styles.card}>
-            <Text style={styles.title}>Event • {e.stream_count} POVs</Text>
-            <Text style={styles.metaSmall}>Created: {new Date(e.created_at).toLocaleString()}</Text>
-          </Pressable>
+          <TouchableOpacity 
+            key={e.id} 
+            onPress={() => onPressEvent?.(e.id)} 
+            style={styles.card}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardHeader}>
+              <View style={styles.iconBadge}>
+                <Ionicons name="people" size={18} color="#4D9FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title}>Event • {e.stream_count} POVs</Text>
+                <Text style={styles.metaSmall}>
+                  {new Date(e.created_at).toLocaleString()}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#A0A0A0" />
+            </View>
+          </TouchableOpacity>
         ))}
+        
         {streams.map((s) => (
-          <Pressable key={s.id} onPress={() => onPressStream && onPressStream(s.id)} style={styles.card}>
-            <Text style={styles.title}>Single Stream • @{s.user_id}</Text>
-          </Pressable>
+          <TouchableOpacity 
+            key={s.id} 
+            onPress={() => onPressStream?.(s.id)} 
+            style={styles.card}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardHeader}>
+              <View style={styles.iconBadge}>
+                <Ionicons name="radio" size={18} color="#4D9FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title}>@{s.user_id}</Text>
+                <Text style={styles.metaSmall}>Solo stream</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#A0A0A0" />
+            </View>
+          </TouchableOpacity>
         ))}
+        
         {events.length === 0 && streams.length === 0 && (
-          <View style={styles.center}><Text style={styles.meta}>No live data yet</Text></View>
+          <View style={styles.center}>
+            <Ionicons name="map-outline" size={48} color="#4D9FFF" style={{ marginBottom: 12 }} />
+            <Text style={styles.emptyTitle}>No live streams yet</Text>
+            <Text style={styles.meta}>Create a stream from the Go Live tab</Text>
+          </View>
         )}
       </ScrollView>
     </View>
