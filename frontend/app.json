@@ -50,7 +50,13 @@
           "backgroundColor": "#000"
         }
       ],
-      "expo-maps"
+      "expo-maps",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Allsee to access your camera for live streaming."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
