@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated } from "react-native";
 
-export default function ClusterMarker({ count, color }: { count: number; color: string }) {
+export default function ClusterMarker({ count, color, baseSize = 40 }: { count: number; color: string; baseSize?: number }) {
   const scale = useRef(new Animated.Value(0.95)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -14,9 +14,12 @@ export default function ClusterMarker({ count, color }: { count: number; color: 
     return () => loop.stop();
   }, [scale]);
 
+  const outer = Math.min(56, baseSize + Math.min(12, Math.max(0, count - 2) * 2));
+  const inner = outer - 10;
+
   return (
-    <Animated.View style={[styles.cluster, { borderColor: color, transform: [{ scale }] }]}> 
-      <View style={[styles.clusterInner, { backgroundColor: color }]}> 
+    <Animated.View style={[styles.cluster, { borderColor: color, width: outer, height: outer, borderRadius: outer / 2, transform: [{ scale }] }]}> 
+      <View style={[styles.clusterInner, { backgroundColor: color, width: inner, height: inner, borderRadius: inner / 2 }]}> 
         <Text style={styles.clusterText}>{count}</Text>
       </View>
     </Animated.View>
@@ -24,7 +27,7 @@ export default function ClusterMarker({ count, color }: { count: number; color: 
 }
 
 const styles = StyleSheet.create({
-  cluster: { width: 40, height: 40, borderRadius: 20, borderWidth: 3, alignItems: "center", justifyContent: "center", backgroundColor: "#00000099" },
-  clusterInner: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  cluster: { borderWidth: 3, alignItems: "center", justifyContent: "center", backgroundColor: "#00000099" },
+  clusterInner: { alignItems: "center", justifyContent: "center" },
   clusterText: { color: "#fff", fontWeight: "700" },
 });

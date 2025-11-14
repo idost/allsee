@@ -1,56 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import * as Location from "expo-location";
 import Constants from "expo-constants";
 import GlowPin from "./GlowPin";
 import ClusterMarker from "./ClusterMarker";
 
-const COLORS = {
-  blue: "#4D9FFF",
-  violet: "#9D4DFF",
-  amber: "#FFB84D",
-};
+const COLORS = { blue: "#4D9FFF", violet: "#9D4FF", amber: "#FFB84D" } as any;
 
-export type MapEvent = {
-  id: string;
-  centroid_lat: number;
-  centroid_lng: number;
-  stream_count: number;
-  created_at: string;
-  viewer_count_total?: number;
-};
-
-export type MapStream = {
-  id: string;
-  user_id: string;
-  lat: number;
-  lng: number;
-  viewer_count_peak?: number;
-};
-
-export type Region = {
-  latitude: number;
-  longitude: number;
-  latitudeDelta: number;
-  longitudeDelta: number;
-};
+export type MapEvent = { id: string; centroid_lat: number; centroid_lng: number; stream_count: number; created_at: string; viewer_count_total?: number };
+export type MapStream = { id: string; user_id: string; lat: number; lng: number; viewer_count_peak?: number };
+export type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
 
 export default function NativeMap({
-  events,
-  streams,
-  onRegionChangeComplete,
-  initialRegion = { latitude: 41.0082, longitude: 28.9784, latitudeDelta: 0.05, longitudeDelta: 0.05 },
-  loading,
-  onPressEvent,
-  onPressStream,
+  events, streams, onRegionChangeComplete, initialRegion = { latitude: 41.0082, longitude: 28.9784, latitudeDelta: 0.05, longitudeDelta: 0.05 }, loading,
+  onPressEvent, onPressStream,
 }: {
-  events: MapEvent[];
-  streams: MapStream[];
-  onRegionChangeComplete: (r: Region) => void;
-  initialRegion?: Region;
-  loading?: boolean;
-  onPressEvent?: (eventId: string) => void;
-  onPressStream?: (streamId: string) => void;
+  events: MapEvent[]; streams: MapStream[]; onRegionChangeComplete: (r: Region) => void; initialRegion?: Region; loading?: boolean; onPressEvent?: (eventId: string) => void; onPressStream?: (streamId: string) => void;
 }) {
   const [region, setRegion] = useState<Region>(initialRegion);
   const [locLoading, setLocLoading] = useState(false);
@@ -69,30 +34,19 @@ export default function NativeMap({
     finally { setLocLoading(false); }
   }, []);
 
-  useEffect(() => {
-    mounted.current = true;
-    locate();
-    return () => { mounted.current = false; };
-  }, [locate]);
+  useEffect(() => { mounted.current = true; locate(); return () => { mounted.current = false; }; }, [locate]);
 
-  const handleRegionChangeComplete = useCallback((r: Region) => {
-    setRegion(r);
-    onRegionChangeComplete(r);
-  }, [onRegionChangeComplete]);
+  const handleRegionChangeComplete = useCallback((r: Region) => { setRegion(r); onRegionChangeComplete(r); }, [onRegionChangeComplete]);
 
   const isExpoGo = Constants.appOwnership === "expo";
   if (isExpoGo) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
         {(loading || locLoading) && <ActivityIndicator color="#fff" />}
-        <Text style={{ color: "#A0A0A0", paddingHorizontal: 16, textAlign: "center" }}>
-          Map preview requires a Dev Build. Use the Web list or continue with Go Live.
-        </Text>
       </View>
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const RNMaps = require("react-native-maps");
   const MapView: any = RNMaps.default;
   const Marker: any = RNMaps.Marker;
@@ -100,23 +54,18 @@ export default function NativeMap({
   return (
     <View style={{ flex: 1 }}>
       {(loading || locLoading) && (
-        <View style={styles.loadingOverlay}>
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: 48, alignItems: "center", justifyContent: "center", zIndex: 2 }}>
           <ActivityIndicator color="#fff" />
         </View>
       )}
-      <MapView
-        style={StyleSheet.absoluteFill}
-        initialRegion={region}
-        onRegionChangeComplete={handleRegionChangeComplete}
-        showsUserLocation
-      >
+      <MapView style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} initialRegion={region} onRegionChangeComplete={handleRegionChangeComplete} showsUserLocation>
         {streams.map((s) => (
           <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`@${s.user_id}`} description="Live stream" onPress={() => onPressStream && onPressStream(s.id)}>
-            <GlowPin color={COLORS.blue} size={16} />
+            <GlowPin color="#4D9FFF" size={16 + Math.min(8, Math.round((s.viewer_count_peak || 0) / 10))} intensity={Math.max(1, Math.min(3, (s.viewer_count_peak || 0) / 20))} />
           </Marker>
         ))}
         {events.map((e) => {
-          const color = e.stream_count >= 5 ? COLORS.amber : COLORS.violet;
+          const color = e.stream_count >= 5 ? "#FFB84D" : "#9D4DFF";
           return (
             <Marker key={e.id} coordinate={{ latitude: e.centroid_lat, longitude: e.centroid_lng }} title="Event" description={`${e.stream_count} POVs`} onPress={() => onPressEvent && onPressEvent(e.id)}>
               <ClusterMarker count={e.stream_count} color={color} />
@@ -127,7 +76,3 @@ export default function NativeMap({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, height: 48, alignItems: "center", justifyContent: "center", zIndex: 2 },
-});

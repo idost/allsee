@@ -1,24 +1,14 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, FlatList, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, FlatList, Dimensions, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Video } from "expo-video";
-import { apiGet, presenceWatch, presenceLeave } from "../../src/utils/api";
+import { apiGet, presenceWatch, presenceLeave, getEventPresence, followUser } from "../../src/utils/api";
 import { useViewerStore } from "../../src/state/viewerStore";
 import { CURRENT_USER_ID } from "../../src/constants/user";
 
-const COLORS = {
-  bg: "#0A0A0A",
-  surface: "#1A1A1A",
-  blue: "#4D9FFF",
-  violet: "#9D4EDD",
-  amber: "#FFB800",
-  text: "#FFFFFF",
-  meta: "#A0A0A0",
-  danger: "#FF4D4D",
-};
-
+const COLORS = { bg: "#0A0A0A", surface: "#1A1A1A", blue: "#4D9FFF", violet: "#9D4EDD", amber: "#FFB800", text: "#FFFFFF", meta: "#A0A0A0", danger: "#FF4D4D" } as const;
 const { width } = Dimensions.get("window");
 
 export default function EventDetail() {
@@ -26,8 +16,8 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any | null>(null);
+  const [presence, setPresence] = useState<{ watching_now: number; friends_watching: number } | null>(null);
 
-  const activeEventId = useViewerStore((s) => s.activeEventId);
   const povs = useViewerStore((s) => s.povs);
   const activeIndex = useViewerStore((s) => s.activeIndex);
   const setEvent = useViewerStore((s) => s.setEvent);
@@ -45,6 +35,10 @@ export default function EventDetail() {
       const d = await apiGet<any>(`/api/events/${id}`);
       setData(d);
       setEvent(id!, (d.streams || []).map((s: any) => ({ id: s.id, user_id: s.user_id, playback_url: s.playback_url })));
+      try {
+        const p = await getEventPresence(String(id), CURRENT_USER_ID);
+        setPresence({ watching_now: p.watching_now, friends_watching: p.friends_watching });
+      } catch {}
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -66,14 +60,23 @@ export default function EventDetail() {
   }, [id]);
 
   const renderThumb = ({ item, index }: { item: any; index: number }) => (
-    <TouchableOpacity
-      onPress={() => setActiveIndex(index)}
-      style={[styles.thumb, index === activeIndex && styles.thumbActive]}
-    >
+    <TouchableOpacity onPress={() => setActiveIndex(index)} style={[styles.thumb, index === activeIndex && styles.thumbActive]}>
       <Ionicons name="videocam" color={index === activeIndex ? COLORS.text : COLORS.meta} size={18} />
       <Text style={[styles.thumbText, index === activeIndex && styles.thumbTextActive]}>@{item.user_id}</Text>
     </TouchableOpacity>
   );
+
+  const followActive = useCallback(async () => {
+    if (!activeStream?.user_id) return;
+    try {
+      await followUser(CURRENT_USER_ID, activeStream.user_id);
+      Alert.alert("Followed", `You are now following @${activeStream.user_id}`);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed to follow");
+    }
+  }, [activeStream]);
+
+  const presenceText = presence ? (presence.friends_watching > 0 ? `${presence.friends_watching} friends watching` : `${presence.watching_now} watching now`) : undefined;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -89,22 +92,17 @@ export default function EventDetail() {
                 <Text style={styles.badgeText}>{isLive ? "LIVE" : "REPLAY"}</Text>
               </View>
               <Text style={styles.metaText}>{data.event.stream_count} POVs</Text>
+              {presenceText ? <View style={styles.chip}><Text style={styles.chipText}>{presenceText}</Text></View> : null}
             </View>
-            <TouchableOpacity onPress={load}>
-              <Ionicons name="refresh" color={COLORS.meta} size={20} />
-            </TouchableOpacity>
+            <View style={styles.row}>
+              <TouchableOpacity onPress={followActive} style={styles.followBtn}><Text style={styles.followText}>Follow POV</Text></TouchableOpacity>
+              <TouchableOpacity onPress={load}><Ionicons name="refresh" color={COLORS.meta} size={20} /></TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.playerWrap}>
             {activeStream?.playback_url ? (
-              <Video
-                style={styles.player}
-                source={{ uri: activeStream.playback_url }}
-                useNativeControls
-                resizeMode="cover"
-                shouldPlay={false}
-                isLooping={false}
-              />
+              <Video style={styles.player} source={{ uri: activeStream.playback_url }} useNativeControls resizeMode="cover" />
             ) : (
               <View style={[styles.player, styles.playerPlaceholder]}>
                 <Ionicons name="image" color={COLORS.meta} size={48} />
@@ -118,15 +116,7 @@ export default function EventDetail() {
           </View>
 
           <View style={styles.povBar}>
-            <FlatList
-              horizontal
-              data={povs.length ? povs : streams}
-              keyExtractor={(item) => item.id}
-              renderItem={renderThumb}
-              ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
-              contentContainerStyle={{ paddingHorizontal: 12 }}
-              showsHorizontalScrollIndicator={false}
-            />
+            <FlatList horizontal data={povs.length ? povs : streams} keyExtractor={(item) => item.id} renderItem={renderThumb} ItemSeparatorComponent={() => <View style={{ width: 8 }} />} contentContainerStyle={{ paddingHorizontal: 12 }} showsHorizontalScrollIndicator={false} />
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 16 }}>
@@ -158,6 +148,10 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   badgeText: { color: COLORS.text, fontWeight: "700", fontSize: 12 },
   metaText: { color: COLORS.meta },
+  chip: { backgroundColor: "#00000066", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  chipText: { color: COLORS.meta, fontSize: 12 },
+  followBtn: { borderColor: COLORS.blue, borderWidth: 2, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10 },
+  followText: { color: COLORS.blue, fontWeight: "700", fontSize: 12 },
   playerWrap: { width: "100%", height: Math.round(width * 9 / 16), backgroundColor: "#000" },
   player: { width: "100%", height: "100%", backgroundColor: "#000" },
   playerPlaceholder: { alignItems: "center", justifyContent: "center" },
