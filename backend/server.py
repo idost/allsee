@@ -409,6 +409,7 @@ async def create_stream(payload: StreamCreate):
         viewer_count_peak=0, event_id=event_id, status='live', privacy_mode=payload.privacy_mode,
         playback_url=payload.playback_url,
         rtmp_ingest_url=rtmp_ingest_url, rtmp_stream_key=rtmp_stream_key,
+        whip_ingest_url=whip_ingest_url,
         livepeer_stream_id=livepeer_stream_id, livepeer_playback_id=livepeer_playback_id,
     )
     return out
