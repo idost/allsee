@@ -21,6 +21,7 @@ type StreamResp = {
   status: "live" | "ended";
   rtmp_ingest_url?: string;
   rtmp_stream_key?: string;
+  whip_ingest_url?: string;
   livepeer_playback_id?: string;
 };
 
