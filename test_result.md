@@ -143,9 +143,10 @@
         comment: "Initial player with POV strip and metadata"
 ## test_plan:
   current_focus:
-    - "Create test streams to form event"
-    - "Verify /api/events/live and /api/events/{id}"
-    - "Open /event/{id} and confirm POV strip renders"
+    - "Livepeer Integration"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
 
 ## frontend:
   - task: "Map tab with live pins & event clusters (web-safe)"
