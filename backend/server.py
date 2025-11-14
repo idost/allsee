@@ -364,10 +364,33 @@ async def create_stream(payload: StreamCreate):
     now = datetime.utcnow()
     stream_id = str(uuid.uuid4())
     lat, lng = float(payload.lat), float(payload.lng)
+    
+    # Create Livepeer stream
+    livepeer_stream = None
+    rtmp_ingest_url = None
+    rtmp_stream_key = None
+    livepeer_stream_id = None
+    livepeer_playback_id = None
+    
+    try:
+        if LIVEPEER_API_KEY:
+            stream_name = f"{payload.user_id}_{stream_id[:8]}"
+            livepeer_stream = await livepeer_client.create_stream(name=stream_name, record=True)
+            livepeer_stream_id = livepeer_stream.get('id')
+            rtmp_stream_key = livepeer_stream.get('streamKey')
+            rtmp_ingest_url = f"rtmp://{livepeer_stream.get('rtmpIngestUrl', 'rtmp.livepeer.com/live')}"
+            livepeer_playback_id = livepeer_stream.get('playbackId')
+            logger.info(f"Created Livepeer stream {livepeer_stream_id} for {stream_id}")
+    except Exception as e:
+        logger.error(f"Failed to create Livepeer stream: {e}")
+        # Continue without Livepeer if it fails
+    
     stream_doc = {
         'id': stream_id, 'user_id': payload.user_id, 'lat': lat, 'lng': lng, 'started_at': now, 'ended_at': None,
         'viewer_count_peak': 0, 'event_id': None, 'status': 'live', 'privacy_mode': payload.privacy_mode,
         'device_camera': payload.device_camera, 'playback_url': payload.playback_url,
+        'livepeer_stream_id': livepeer_stream_id, 'livepeer_playback_id': livepeer_playback_id,
+        'rtmp_ingest_url': rtmp_ingest_url, 'rtmp_stream_key': rtmp_stream_key,
     }
     await db.streams.insert_one(stream_doc)
     event_id = await assign_event_for_stream(stream_doc)
@@ -379,6 +402,8 @@ async def create_stream(payload: StreamCreate):
         id=stream_id, user_id=payload.user_id, lat=out_lat, lng=out_lng, started_at=now, ended_at=None,
         viewer_count_peak=0, event_id=event_id, status='live', privacy_mode=payload.privacy_mode,
         playback_url=payload.playback_url,
+        rtmp_ingest_url=rtmp_ingest_url, rtmp_stream_key=rtmp_stream_key,
+        livepeer_stream_id=livepeer_stream_id, livepeer_playback_id=livepeer_playback_id,
     )
     return out
 
