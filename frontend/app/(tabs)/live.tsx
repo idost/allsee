@@ -127,6 +127,31 @@ export default function LiveScreen() {
         </View>
       </View>
 
+      {activeStream && activeStream.rtmp_ingest_url && (
+        <View style={styles.credentialsSection}>
+          <View style={styles.credHeader}>
+            <Ionicons name="key-outline" color="#4D9FFF" size={20} />
+            <Text style={styles.credTitle}>Broadcasting Credentials</Text>
+          </View>
+          <View style={styles.credCard}>
+            <Text style={styles.credLabel}>RTMP Server URL</Text>
+            <Text style={styles.credValue} selectable>{activeStream.rtmp_ingest_url}</Text>
+          </View>
+          <View style={styles.credCard}>
+            <Text style={styles.credLabel}>Stream Key</Text>
+            <Text style={styles.credValue} selectable>{activeStream.rtmp_stream_key}</Text>
+          </View>
+          <View style={styles.instructionsBox}>
+            <Text style={styles.instructionsTitle}>📱 How to Broadcast:</Text>
+            <Text style={styles.instructionsText}>
+              1. Install Larix Broadcaster (iOS/Android){"\n"}
+              2. Add new connection with Server URL and Stream Key above{"\n"}
+              3. Start broadcasting to go live on the map!
+            </Text>
+          </View>
+        </View>
+      )}
+
       <View style={styles.footer}>
         <TouchableOpacity
           onPress={handleGoLive}
