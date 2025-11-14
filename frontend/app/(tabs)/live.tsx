@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { apiPost } from "../../src/utils/api";
+import PermissionModal from "../../src/components/PermissionModal";
 
 const PRIVACY_OPTIONS = [
   { key: "exact", label: "Exact location" },
@@ -24,24 +25,34 @@ export default function LiveScreen() {
   const [camera, setCamera] = useState<"front" | "back">("back");
   const [activeStream, setActiveStream] = useState<StreamResp | null>(null);
   const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState(false);
 
   const canEnd = useMemo(() => !!activeStream, [activeStream]);
 
   const requestLocationAsync = useCallback(async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    const { status } = await Location.getForegroundPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission required", "Location permission is needed to go live.");
-      throw new Error("Permission denied");
+      setModal(true);
+      return false;
     }
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    return true;
+  }, []);
+
+  const reallyRequest = useCallback(async () => {
+    setModal(false);
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    return status === "granted";
   }, []);
 
   const handleGoLive = useCallback(async () => {
     try {
       setLoading(true);
-      const { lat, lng } = await requestLocationAsync();
-      const payload = { user_id: "demo-user", lat, lng, privacy_mode: privacy, device_camera: camera };
+      const ready = await requestLocationAsync();
+      let granted = ready;
+      if (!ready) granted = await reallyRequest();
+      if (!granted) throw new Error("Permission denied");
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const payload = { user_id: "demo-user", lat: pos.coords.latitude, lng: pos.coords.longitude, privacy_mode: privacy, device_camera: camera };
       const data = await apiPost<StreamResp>("/api/streams", payload);
       setActiveStream({ id: data.id, event_id: (data as any).event_id, status: data.status });
       Alert.alert("Live!", `Stream started. ID: ${data.id}`);
@@ -51,7 +62,7 @@ export default function LiveScreen() {
     } finally {
       setLoading(false);
     }
-  }, [privacy, camera, requestLocationAsync]);
+  }, [privacy, camera, requestLocationAsync, reallyRequest]);
 
   const handleEnd = useCallback(async () => {
     if (!activeStream) return;
@@ -70,6 +81,13 @@ export default function LiveScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <PermissionModal
+        visible={modal}
+        title="Allow Location"
+        message="Allsee needs your location to tag your stream and show it on the live map."
+        onAccept={reallyRequest}
+        onCancel={() => setModal(false)}
+      />
       <View style={styles.header}>
         <Ionicons name="radio-outline" color="#4D9FFF" size={22} />
         <Text style={styles.headerText}>Go Live</Text>

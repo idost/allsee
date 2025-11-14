@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import * as Location from "expo-location";
 import Constants from "expo-constants";
 import GlowPin from "./GlowPin";
+import ClusterMarker from "./ClusterMarker";
 
 const COLORS = {
   blue: "#4D9FFF",
@@ -16,6 +17,7 @@ export type MapEvent = {
   centroid_lng: number;
   stream_count: number;
   created_at: string;
+  viewer_count_total?: number;
 };
 
 export type MapStream = {
@@ -23,9 +25,9 @@ export type MapStream = {
   user_id: string;
   lat: number;
   lng: number;
+  viewer_count_peak?: number;
 };
 
-// Local Region type to avoid static import of react-native-maps types
 export type Region = {
   latitude: number;
   longitude: number;
@@ -78,7 +80,6 @@ export default function NativeMap({
     onRegionChangeComplete(r);
   }, [onRegionChangeComplete]);
 
-  // In Expo Go (appOwnership === 'expo'), avoid requiring native-only module react-native-maps
   const isExpoGo = Constants.appOwnership === "expo";
   if (isExpoGo) {
     return (
@@ -91,7 +92,6 @@ export default function NativeMap({
     );
   }
 
-  // Dynamically require react-native-maps only when not running in Expo Go
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const RNMaps = require("react-native-maps");
   const MapView: any = RNMaps.default;
@@ -119,11 +119,7 @@ export default function NativeMap({
           const color = e.stream_count >= 5 ? COLORS.amber : COLORS.violet;
           return (
             <Marker key={e.id} coordinate={{ latitude: e.centroid_lat, longitude: e.centroid_lng }} title="Event" description={`${e.stream_count} POVs`} onPress={() => onPressEvent && onPressEvent(e.id)}>
-              <View style={[styles.cluster, { borderColor: color }]}> 
-                <View style={[styles.clusterInner, { backgroundColor: color }]}> 
-                  <Text style={styles.clusterText}>{e.stream_count}</Text>
-                </View>
-              </View>
+              <ClusterMarker count={e.stream_count} color={color} />
             </Marker>
           );
         })}
@@ -134,7 +130,4 @@ export default function NativeMap({
 
 const styles = StyleSheet.create({
   loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, height: 48, alignItems: "center", justifyContent: "center", zIndex: 2 },
-  cluster: { width: 36, height: 36, borderRadius: 18, borderWidth: 3, alignItems: "center", justifyContent: "center", backgroundColor: "#00000099" },
-  clusterInner: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  clusterText: { color: "#fff", fontWeight: "700" },
 });
