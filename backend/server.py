@@ -588,6 +588,74 @@ async def reverse_geocode(lat: float, lng: float):
         return { 'label': None }
 
 
+# Livepeer Webhook Handler
+@api_router.post('/webhooks/livepeer')
+async def livepeer_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Handle webhooks from Livepeer for stream lifecycle events.
+    Events: stream.started, stream.idle, recording.ready, etc.
+    """
+    try:
+        body = await request.body()
+        payload = await request.json()
+        
+        event_type = payload.get('event')
+        webhook_id = payload.get('id')
+        data = payload.get('payload', {})
+        
+        logger.info(f"Received Livepeer webhook: {event_type} (ID: {webhook_id})")
+        
+        # Process different event types
+        if event_type == 'stream.started':
+            livepeer_stream_id = data.get('id')
+            logger.info(f"Stream started: {livepeer_stream_id}")
+            # Find our stream by livepeer_stream_id and mark as active
+            await db.streams.update_one(
+                { 'livepeer_stream_id': livepeer_stream_id },
+                { '$set': { 'is_broadcasting': True } }
+            )
+        
+        elif event_type == 'stream.idle':
+            livepeer_stream_id = data.get('id')
+            logger.info(f"Stream went idle: {livepeer_stream_id}")
+            await db.streams.update_one(
+                { 'livepeer_stream_id': livepeer_stream_id },
+                { '$set': { 'is_broadcasting': False } }
+            )
+        
+        elif event_type == 'recording.ready':
+            logger.info(f"Recording ready: {data.get('id')}")
+            # Optionally store recording URL
+            recording_url = data.get('downloadUrl')
+            stream_id = data.get('stream', {}).get('id')
+            if recording_url and stream_id:
+                await db.streams.update_one(
+                    { 'livepeer_stream_id': stream_id },
+                    { '$set': { 'recording_url': recording_url } }
+                )
+        
+        elif event_type == 'asset.ready':
+            logger.info(f"Asset ready: {data.get('id')}")
+            # Store asset playback URL
+            asset_id = data.get('id')
+            playback_id = data.get('playbackId')
+            if playback_id:
+                playback_url = f"https://livepeercdn.studio/hls/{playback_id}/index.m3u8"
+                # Try to find the associated stream
+                stream_id = data.get('sourceAssetId') or data.get('stream', {}).get('id')
+                if stream_id:
+                    await db.streams.update_one(
+                        { 'livepeer_stream_id': stream_id },
+                        { '$set': { 'playback_url': playback_url } }
+                    )
+        
+        return { 'status': 'received', 'event': event_type, 'webhook_id': webhook_id }
+    
+    except Exception as e:
+        logger.error(f"Error processing Livepeer webhook: {str(e)}")
+        return { 'status': 'error', 'message': str(e) }
+
+
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
