@@ -5,6 +5,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Video } from "expo-av";
 import { apiGet } from "../../src/utils/api";
+import { useViewerStore } from "../../src/state/viewerStore";
 
 const COLORS = {
   bg: "#0A0A0A",
@@ -24,10 +25,15 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any | null>(null);
-  const [active, setActive] = useState<number>(0);
+
+  const activeEventId = useViewerStore((s) => s.activeEventId);
+  const povs = useViewerStore((s) => s.povs);
+  const activeIndex = useViewerStore((s) => s.activeIndex);
+  const setEvent = useViewerStore((s) => s.setEvent);
+  const setActiveIndex = useViewerStore((s) => s.setActiveIndex);
 
   const streams = useMemo(() => (data?.streams ?? []), [data]);
-  const activeStream = streams[active];
+  const activeStream = povs[activeIndex] ?? streams[0];
   const isLive = (data?.event?.status ?? "ended") === "live";
 
   const load = useCallback(async () => {
@@ -37,23 +43,23 @@ export default function EventDetail() {
       setLoading(true);
       const d = await apiGet<any>(`/api/events/${id}`);
       setData(d);
-      setActive(0);
+      setEvent(id, (d.streams || []).map((s: any) => ({ id: s.id, user_id: s.user_id, playback_url: s.playback_url })));
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, setEvent]);
 
   useEffect(() => { load(); }, [load]);
 
   const renderThumb = ({ item, index }: { item: any; index: number }) => (
     <TouchableOpacity
-      onPress={() => setActive(index)}
-      style={[styles.thumb, index === active && styles.thumbActive]}
+      onPress={() => setActiveIndex(index)}
+      style={[styles.thumb, index === activeIndex && styles.thumbActive]}
     >
-      <Ionicons name="videocam" color={index === active ? COLORS.text : COLORS.meta} size={18} />
-      <Text style={[styles.thumbText, index === active && styles.thumbTextActive]}>@{item.user_id}</Text>
+      <Ionicons name="videocam" color={index === activeIndex ? COLORS.text : COLORS.meta} size={18} />
+      <Text style={[styles.thumbText, index === activeIndex && styles.thumbTextActive]}>@{item.user_id}</Text>
     </TouchableOpacity>
   );
 
@@ -102,7 +108,7 @@ export default function EventDetail() {
           <View style={styles.povBar}>
             <FlatList
               horizontal
-              data={streams}
+              data={povs.length ? povs : streams}
               keyExtractor={(item) => item.id}
               renderItem={renderThumb}
               ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
@@ -117,10 +123,10 @@ export default function EventDetail() {
             <Text style={styles.metaSmall}>Created: {new Date(data.event.created_at).toLocaleString()}</Text>
             <View style={{ height: 12 }} />
             <Text style={styles.title}>Streams</Text>
-            {streams.map((s: any) => (
+            {(povs.length ? povs : streams).map((s: any) => (
               <View key={s.id} style={styles.card}>
                 <Text style={styles.meta}>@{s.user_id}</Text>
-                <Text style={styles.metaSmall}>{s.status === 'live' ? 'Live' : 'Ended'}</Text>
+                <Text style={styles.metaSmall}>{s.playback_url ? 'Has Replay' : 'No Replay'}</Text>
               </View>
             ))}
           </ScrollView>
