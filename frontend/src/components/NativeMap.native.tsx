@@ -84,7 +84,8 @@ export default function NativeMap({
       >
         {streams.map((s) => (
           <Marker key={s.id} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`@${s.user_id}`} description="Live stream" onPress={() => onPressStream && onPressStream(s.id)}>
-            <View style={[styles.pin, { backgroundColor: COLORS.blue }]} />
+            {/* Glow pin for single live stream */}
+            <GlowPin color={COLORS.blue} size={16} />
           </Marker>
         ))}
         {events.map((e) => {
