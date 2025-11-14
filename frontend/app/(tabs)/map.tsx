@@ -1,32 +1,47 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import NativeMap from "../../src/components/NativeMap.native";
 
 const COLORS = {
   bg: "#0A0A0A",
   surface: "#1A1A1A",
   blue: "#4D9FFF",
-  violet: "#9D4DFF",
-  amber: "#FFB84D",
   text: "#FFFFFF",
   meta: "#A0A0A0",
   danger: "#FF4D4D",
 };
 
-export default function MapScreenWebFallback() {
+function regionToBbox(region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; }) {
+  const ne = {
+    lat: region.latitude + region.latitudeDelta / 2,
+    lng: region.longitude + region.longitudeDelta / 2,
+  };
+  const sw = {
+    lat: region.latitude - region.latitudeDelta / 2,
+    lng: region.longitude - region.longitudeDelta / 2,
+  };
+  return { ne: `${ne.lat},${ne.lng}`, sw: `${sw.lat},${sw.lng}` };
+}
+
+const DEFAULT_REGION = { latitude: 41.0082, longitude: 28.9784, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+
+export default function MapRoute() {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [streams, setStreams] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const lastRegionRef = useRef(DEFAULT_REGION);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const singles = useMemo(() => streams.filter((s) => !s.event_id), [streams]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (r = lastRegionRef.current) => {
+    const { ne, sw } = regionToBbox(r);
     const [evRes, stRes] = await Promise.all([
-      fetch(`/api/events/live`),
-      fetch(`/api/streams/live`),
+      fetch(`/api/events/live?ne=${encodeURIComponent(ne)}&sw=${encodeURIComponent(sw)}`),
+      fetch(`/api/streams/live?ne=${encodeURIComponent(ne)}&sw=${encodeURIComponent(sw)}`),
     ]);
     if (!evRes.ok) throw new Error(`Events ${evRes.status}`);
     if (!stRes.ok) throw new Error(`Streams ${stRes.status}`);
@@ -52,10 +67,13 @@ export default function MapScreenWebFallback() {
     load();
     intervalRef.current && clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => fetchData().catch(() => {}), 4000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchData, load]);
+
+  const onRegionChangeComplete = useCallback((r: any) => {
+    lastRegionRef.current = r;
+    fetchData(r).catch(() => {});
+  }, [fetchData]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -67,45 +85,28 @@ export default function MapScreenWebFallback() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={COLORS.blue} />
-          <Text style={styles.meta}>Loading…</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>Error: {error}</Text>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={{ padding: 16 }}>
-          {events.map((e) => (
-            <View key={e.id} style={styles.card}>
-              <Text style={styles.title}>Event • {e.stream_count} POVs</Text>
-              <Text style={styles.metaSmall}>Created: {new Date(e.created_at).toLocaleString()}</Text>
-            </View>
-          ))}
-          {singles.map((s) => (
-            <View key={s.id} style={styles.card}>
-              <Text style={styles.title}>Single Stream • @{s.user_id}</Text>
-            </View>
-          ))}
-          {events.length === 0 && singles.length === 0 && (
-            <View style={styles.center}><Text style={styles.meta}>No live data yet</Text></View>
-          )}
-        </ScrollView>
+      {loading && (
+        <View style={styles.center}><ActivityIndicator color={COLORS.blue} /></View>
       )}
+      {error && (
+        <View style={styles.center}><Text style={styles.error}>Error: {error}</Text></View>
+      )}
+
+      <NativeMap
+        events={events}
+        streams={singles}
+        onRegionChangeComplete={onRegionChangeComplete}
+        initialRegion={DEFAULT_REGION as any}
+        loading={loading}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { position: "sticky", top: 0, backgroundColor: "#00000066", paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+  header: { zIndex: 2, position: "absolute", top: 0, left: 0, right: 0, backgroundColor: "#00000066", paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 8 },
   headerText: { color: COLORS.text, fontSize: 18, marginLeft: 8 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  center: { position: "absolute", top: 48, left: 0, right: 0, alignItems: "center" },
   error: { color: COLORS.danger },
-  card: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
-  title: { color: COLORS.text, fontSize: 16 },
-  meta: { color: COLORS.meta },
-  metaSmall: { color: COLORS.meta, fontSize: 12, marginTop: 6 },
 });
