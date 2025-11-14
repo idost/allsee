@@ -271,29 +271,51 @@ export default function LiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0A0A0A" },
-  header: { flexDirection: "row", alignItems: "center", padding: 16, gap: 8 },
-  headerText: { color: "#FFFFFF", fontSize: 18, marginLeft: 8 },
+  header: { flexDirection: "row", alignItems: "center", padding: 20, gap: 12 },
+  headerText: { color: "#FFFFFF", fontSize: 24, fontWeight: "700", marginLeft: 4 },
   section: { paddingHorizontal: 16, paddingVertical: 12 },
-  sectionTitle: { color: "#FFFFFF", fontSize: 16, marginBottom: 8 },
-  row: { flexDirection: "row", gap: 8 },
-  chip: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#4D9FFF22", backgroundColor: "#1A1A1A" },
+  sectionTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", marginBottom: 12 },
+  row: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  chip: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: "#4D9FFF22", backgroundColor: "#1A1A1A" },
   chipActive: { borderColor: "#4D9FFF", backgroundColor: "#162335" },
-  chipText: { color: "#A0A0A0" },
-  chipTextActive: { color: "#FFFFFF" },
-  credentialsSection: { paddingHorizontal: 16, paddingBottom: 16 },
-  credHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 8 },
-  credTitle: { color: "#4D9FFF", fontSize: 16, fontWeight: "600" },
-  credCard: { backgroundColor: "#1A1A1A", borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "#4D9FFF22" },
-  credLabel: { color: "#A0A0A0", fontSize: 12, marginBottom: 6 },
-  credValue: { color: "#FFFFFF", fontSize: 13, fontFamily: "monospace" },
-  instructionsBox: { backgroundColor: "#162335", borderRadius: 12, padding: 12, marginTop: 8, borderLeftWidth: 3, borderLeftColor: "#4D9FFF" },
-  instructionsTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "600", marginBottom: 8 },
-  instructionsText: { color: "#A0A0A0", fontSize: 12, lineHeight: 18 },
-  footer: { marginTop: "auto", padding: 16, gap: 12 },
-  primaryBtn: { backgroundColor: "#4D9FFF", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  btnDisabled: { opacity: 0.6 },
-  btnText: { color: "#FFFFFF", fontWeight: "600" },
-  secondaryBtn: { borderWidth: 2, borderColor: "#4D9FFF", paddingVertical: 12, borderRadius: 12, alignItems: "center" },
-  secondaryText: { color: "#4D9FFF", fontWeight: "600" },
-  btnDisabledBorder: { opacity: 0.6 },
+  chipText: { color: "#A0A0A0", fontSize: 13 },
+  chipTextActive: { color: "#FFFFFF", fontWeight: "600" },
+  
+  // Stream Active Section
+  streamActiveSection: { paddingHorizontal: 16, paddingTop: 8 },
+  statusBanner: { backgroundColor: "#162335", borderRadius: 12, padding: 16, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: "#4D9FFF" },
+  statusIndicator: { flexDirection: "row", alignItems: "center", gap: 12 },
+  pulsingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#4D9FFF" },
+  statusText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
+  
+  // Guide Section
+  guideSection: { marginBottom: 20 },
+  guideTitle: { color: "#FFFFFF", fontSize: 20, fontWeight: "700", marginBottom: 16 },
+  
+  // Step Card
+  stepCard: { flexDirection: "row", backgroundColor: "#1A1A1A", borderRadius: 12, padding: 16, marginBottom: 16, gap: 12, borderWidth: 1, borderColor: "#4D9FFF11" },
+  stepNumber: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#4D9FFF", alignItems: "center", justifyContent: "center" },
+  stepNumberText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  stepTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", marginBottom: 4 },
+  stepDesc: { color: "#A0A0A0", fontSize: 13, lineHeight: 20 },
+  linkButton: { marginTop: 8, alignSelf: "flex-start" },
+  linkText: { color: "#4D9FFF", fontSize: 14, fontWeight: "600" },
+  
+  // Credentials
+  credCard: { backgroundColor: "#0F0F0F", borderRadius: 10, padding: 12, marginTop: 12, borderWidth: 1, borderColor: "#4D9FFF22" },
+  credRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  credLabel: { color: "#A0A0A0", fontSize: 11, marginBottom: 4, textTransform: "uppercase", fontWeight: "600" },
+  credValue: { color: "#FFFFFF", fontSize: 12, fontFamily: "monospace" },
+  copyBtn: { padding: 8, backgroundColor: "#162335", borderRadius: 8, borderWidth: 1, borderColor: "#4D9FFF44" },
+  
+  // CTA Box
+  ctaBox: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#162335", borderRadius: 12, padding: 16, borderWidth: 1, borderColor: "#4D9FFF22" },
+  ctaText: { flex: 1, color: "#A0A0A0", fontSize: 14, lineHeight: 20 },
+  
+  // Footer
+  footer: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, gap: 12, backgroundColor: "#0A0A0A", borderTopWidth: 1, borderTopColor: "#1A1A1A" },
+  primaryBtn: { backgroundColor: "#4D9FFF", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
+  dangerBtn: { backgroundColor: "#FF4D4D", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
+  btnDisabled: { opacity: 0.5 },
+  btnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
 });
